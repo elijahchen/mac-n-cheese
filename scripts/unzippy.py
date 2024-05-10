@@ -5,30 +5,33 @@ import threading
 import argparse
 from queue import Queue
 
-def extract_file(zFile, password):
+def extract_file(zip_file_object, password, password_queue):
     try:
-        zFile.extractall(pwd=password.encode())
+        zip_file_object.extractall(pwd=password.encode())
         print(f'[+] Password found: {password}\n')
-        return password
-    except (zipfile.BadZipFile, RuntimeError) as e:
-        print(f'[-] Error extracting file: {e}')
-        return None
+        password_queue.put(password)
+    except (zipfile.BadZipFile, RuntimeError):
+        pass
 
 def signal_password_found(password_queue, password):
     if password:
         password_queue.put(password)
 
 def main(zip_file_name, dictionary_file_name):
-    with zipfile.ZipFile(zip_file_name) as zFile, open(dictionary_file_name) as passFile:
-        password_queue = Queue()  # Queue to signal thread to stop
-    threads = []
+    try:
+        with zipfile.ZipFile(zip_file_name) as zip_file_object, open(dictionary_file_name) as dictionary_file_object:
+            password_queue = Queue()  # Queue to signal thread to stop
+            threads = []
+    except FileNotFoundError as e:
+        print(f'Error: {e}')
+        return
 
     # Start threads for each password
-    for line in passFile.readlines():
-        if not found.empty():  # Check if password is already found
+    for line in dictionary_file_object.readlines():
+        if not password_queue.empty():  # Check if password is already found
             break
         password = line.strip('\n')
-        thread = threading.Thread(target=extract_file, args=(zFile, password))
+        thread = threading.Thread(target=extract_file, args=(zip_file_object, password, password_queue))
         thread.daemon = True  # Set thread as daemon to avoid blocking main thread
         threads.append(thread)
         thread.start()
@@ -42,8 +45,6 @@ def main(zip_file_name, dictionary_file_name):
     for thread in threads:
         thread.join()
 
-        password = extract_file(zFile, password)
-        signal_password_found(password_queue, password)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Crack a ZIP file password using a dictionary attack.")
