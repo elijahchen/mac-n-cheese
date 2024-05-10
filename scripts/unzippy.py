@@ -5,18 +5,22 @@ import threading
 import argparse
 from queue import Queue
 
-def extract_file(zFile, password, found):
+def extract_file(zFile, password):
     try:
         zFile.extractall(pwd=password.encode())
         print(f'[+] Password found: {password}\n')
-        found.put(password)  # Signal that the password was found
-    except:
-        pass
+        return password
+    except (zipfile.BadZipFile, RuntimeError) as e:
+        print(f'[-] Error extracting file: {e}')
+        return None
+
+def signal_password_found(password_queue, password):
+    if password:
+        password_queue.put(password)
 
 def main(zip_file_name, dictionary_file_name):
-    zFile = zipfile.ZipFile(zip_file_name)
-    passFile = open(dictionary_file_name)
-    found = Queue()  # Queue to signal thread to stop
+    with zipfile.ZipFile(zip_file_name) as zFile, open(dictionary_file_name) as passFile:
+        password_queue = Queue()  # Queue to signal thread to stop
     threads = []
 
     # Start threads for each password
@@ -24,7 +28,8 @@ def main(zip_file_name, dictionary_file_name):
         if not found.empty():  # Check if password is already found
             break
         password = line.strip('\n')
-        thread = threading.Thread(target=extract_file, args=(zFile, password, found))
+        thread = threading.Thread(target=extract_file, args=(zFile, password))
+        thread.daemon = True  # Set thread as daemon to avoid blocking main thread
         threads.append(thread)
         thread.start()
 
@@ -37,7 +42,8 @@ def main(zip_file_name, dictionary_file_name):
     for thread in threads:
         thread.join()
 
-    passFile.close()
+        password = extract_file(zFile, password)
+        signal_password_found(password_queue, password)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Crack a ZIP file password using a dictionary attack.")
